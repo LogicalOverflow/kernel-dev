@@ -121,17 +121,28 @@
         mkClangShell =
           { clangVersion, rustcVersion }:
           let
+            # https://github.com/LavaDesu/flakes/blob/fdf6a3ce627793e66ab9188b4660fecbc1ef0c96/overlays/linux-lava.nix#L3
             llvmPackages = pkgs."llvmPackages_${clangVersion}";
+            cc = llvmPackages.stdenv.cc.override {
+              # :sob: see https://github.com/NixOS/nixpkgs/issues/142901
+              bintools = llvmPackages.bintools;
+              extraBuildCommands = ''
+                substituteInPlace "$out/nix-support/cc-cflags" --replace " -nostdlibinc" ""
+                echo " -resource-dir=${llvmPackages.libclang.lib}/lib/clang/${clangVersion}" >> $out/nix-support/cc-cflags
+              '';
+            };
+            stdenv = pkgs.overrideCC llvmPackages.stdenv cc;
+            ccacheStdenv = pkgs.ccacheStdenv.override { inherit stdenv; };
           in
           pkgs.mkShell {
             packages =
-              (with llvmPackages; [
-                bintools
-                clang
-                llvm
+              ([
+                llvmPackages.bintools
+                llvmPackages.llvm
+                cc
               ])
               ++ (linuxRustDependencies {
-                inherit (llvmPackages) clang;
+                clang = cc;
                 rustVersion = "rust_${rustcVersion}";
               })
               ++ linuxCommonDependencies;
